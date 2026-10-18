@@ -101,3 +101,7 @@ docs/LEARN.md                   8 short lessons, start here if Kafka is new
 docs/ONCALL.md                  the On call tab explained
 docs/scenarios/                 one write-up per incident
 ```
+
+## AI use
+
+Built with Claude Code. I own the design, review and testing.
