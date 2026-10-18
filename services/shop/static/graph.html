@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kafka Graph</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --surface-2: #222221; --border: rgba(255,255,255,.10);
+    --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781; --grid: #2c2c2a;
+    --blue: #3987e5; --orange: #d95926; --aqua: #199e70; --violet: #9085e9; --yellow: #c98500; --magenta: #d55181; --crit: #e66767; --good: #0ca30c;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink); font-size: 14px; line-height: 1.45; }
+  body.embed header { display: none; }
+  header { display: flex; align-items: center; gap: 14px; padding: 14px 24px; border-bottom: 1px solid var(--border); background: var(--surface); }
+  header h1 { font-size: 17px; margin: 0; font-weight: 600; }
+  header nav { margin-left: auto; display: flex; gap: 8px; }
+  header a { color: var(--ink-2); text-decoration: none; border: 1px solid var(--border); padding: 6px 12px; border-radius: 8px; font-size: 13px; }
+  main { padding: 16px 24px 40px; display: flex; flex-direction: column; gap: 16px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; min-width: 0; }
+  .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .lbl { color: var(--muted); font-size: 12px; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .seg button { background: transparent; border: 0; color: var(--ink-2); padding: 8px 14px; font: inherit; cursor: pointer; }
+  .seg button.active { background: var(--blue); color: #fff; }
+  .seg button + button { border-left: 1px solid var(--border); }
+  button.primary { background: var(--blue); border: 1px solid var(--blue); color: #fff; font-weight: 600; border-radius: 10px; padding: 9px 16px; font: inherit; cursor: pointer; }
+  button.ghost { background: var(--surface-2); border: 1px solid var(--border); color: var(--ink); border-radius: 10px; padding: 9px 14px; font: inherit; cursor: pointer; }
+  .stepper { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border); border-radius: 999px; padding: 3px 6px 3px 10px; font-size: 13px; color: var(--ink-2); }
+  .stepper b { color: var(--c); font-weight: 600; margin-right: 4px; }
+  .stepper button:disabled { opacity: .4; cursor: default; }
+  .stepper button { background: var(--surface-2); border: 1px solid var(--border); color: var(--ink); border-radius: 50%; width: 22px; height: 22px; font: inherit; line-height: 1; cursor: pointer; padding: 0; }
+  .stepper .n { min-width: 16px; text-align: center; color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+  select { background: var(--surface-2); color: var(--ink); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; font: inherit; }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--ink-2); }
+  .pill.on::before { content: "● "; color: var(--good); } .pill.off::before { content: "● "; color: var(--muted); }
+  .graph svg { width: 100%; height: auto; display: block; border-radius: 10px; background: #15161a; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  #intro { background: linear-gradient(90deg, rgba(57,135,229,.12), transparent 60%); }
+
+  /* svg */
+  .colhead { fill: #c3c2b7; font-size: 11px; letter-spacing: .08em; font-weight: 700; }
+  .colsub { fill: #898781; font-size: 10px; }
+  .node .bg { fill: url(#nodeFill); stroke: rgba(255,255,255,.14); stroke-width: 1; }
+  .node:hover .bg { stroke: rgba(255,255,255,.4); }
+  .node.busy .bg { stroke: var(--orange); stroke-width: 2; }
+  .node text { fill: #f0efec; font-size: 12px; font-family: system-ui, sans-serif; }
+  .node text.small { fill: #a09e97; font-size: 10.5px; }
+  .node text.mono { font-family: ui-monospace, Menlo, monospace; fill: #c3c2b7; font-size: 10.5px; }
+  .cell { stroke: rgba(0,0,0,.4); stroke-width: .5; }
+  .groupbox { fill: rgba(255,255,255,.025); stroke: var(--c); stroke-width: 1; stroke-dasharray: 5 4; }
+  .grouplabel { fill: var(--c); font-size: 10.5px; font-weight: 700; letter-spacing: .04em; }
+  .edge { fill: none; stroke: rgba(255,255,255,.10); stroke-width: 1.5; }
+  .edge.replica { stroke: rgba(255,255,255,.07); stroke-dasharray: 3 4; }
+  .edge.leader { stroke: rgba(255,255,255,.2); stroke-width: 1.5; }
+  .edge.owner { stroke-width: 2.2; opacity: .75; }
+  .edge.hot { stroke-width: 2.5; opacity: .9; }
+  .dot { stroke: #0d0d0d; stroke-width: 1.5; }
+  .halo { stroke: none; }
+
+  .log { max-height: 460px; overflow: auto; font-size: 13px; }
+  .ev { padding: 8px 0; border-top: 1px solid var(--grid); }
+  .ev:first-child { border-top: 0; }
+  .ev .t { font-size: 11px; color: var(--muted); font-family: ui-monospace, Menlo, monospace; }
+  .ev .path { color: var(--ink-2); margin-top: 2px; }
+  .ev .path b { color: var(--ink); font-weight: 600; }
+  .ev .path i { color: var(--muted); font-style: normal; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: 12px; margin-top: 10px; }
+  .sw { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
+  .empty { color: var(--muted); font-size: 13px; }
+
+  .step { display: grid; grid-template-columns: 26px 1fr; gap: 12px; padding: 9px 0; border-top: 1px solid var(--grid); }
+  .step:first-child { border-top: 0; }
+  .step .dot2 { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--grid); display: grid; place-items: center; font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .step.done .dot2 { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .step.now .dot2 { border-color: var(--orange); color: var(--orange); animation: pulse 2s infinite; }
+  .step.bad .dot2 { background: var(--crit); border-color: var(--crit); color: #fff; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+  .step .t { font-size: 11px; color: var(--muted); font-family: ui-monospace, Menlo, monospace; margin-left: 8px; }
+  .step b { font-size: 14px; }
+  .step p { margin: 3px 0 0; color: var(--ink-2); font-size: 13px; }
+  .step.todo b, .step.todo p { color: var(--muted); }
+  .journey { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 16px; margin-top: 18px; }
+  @media (max-width: 1000px) { .journey { grid-template-columns: 1fr; } }
+  .journey h2 { margin-bottom: 6px; }
+  .why { margin-top: 0; margin-bottom: 10px; padding: 10px 12px; border-left: 3px solid var(--violet); background: var(--surface-2); border-radius: 0 8px 8px 0; font-size: 13px; color: var(--ink-2); }
+  .why b { color: var(--ink); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Kafka Graph</h1>
+  <nav><a href="/">Lab</a><a href="http://localhost:8080" target="_blank">Inspector</a></nav>
+</header>
+<main>
+  <section class="card">
+    <div class="row">
+      <span class="lbl">Consumer groups</span>
+      <span class="stepper" style="--c:#d95926" data-group="order-processor"><b>order-processor</b><button data-d="-1">−</button><span class="n">0</span><button data-d="1">+</button></span>
+      <span class="stepper" style="--c:#9085e9" data-group="analytics"><b>analytics</b><button data-d="-1">−</button><span class="n">0</span><button data-d="1">+</button></span>
+      <span class="stepper" style="--c:#d55181" data-group="notifications"><b>notifications</b><button data-d="-1">−</button><span class="n">0</span><button data-d="1">+</button></span>
+      <span style="flex:1"></span>
+      <select id="customer"></select>
+      <button class="primary" id="send">Send one order</button>
+      <button class="ghost" id="send3">Send 3</button>
+    </div>
+  </section>
+
+  <section class="card" id="intro">
+    <b>How to read this.</b> The topic <span class="mono">orders</span> is not a box of its own: it is 3 partitions, and every partition is stored on all 3 brokers. Inside each broker you see the copies it holds. The bright row is the leader copy, the one producers write to and consumers read from; dim rows are followers kept in sync. Consumer groups on the right read from the leaders, each partition owned by one member per group. Use the steppers to add members: with 3 partitions, a 4th member gets nothing. The small cells on a partition are its latest offsets, colored by what happened to them. Each worker takes about 3 s per order so you can watch it. Send one order, follow the dots. (Workers also report results on a second topic, <span class="mono">order-status</span>, which this page reads. Not drawn here.)
+  </section>
+
+    <section class="card graph">
+      <svg id="svg"><defs>
+        <linearGradient id="nodeFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a2b30"/><stop offset="1" stop-color="#1c1d21"/></linearGradient>
+        <filter id="glowBlue" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <filter id="glowOrange" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      </defs><g id="static"></g><g id="anim"></g></svg>
+      <div class="legend">
+        <span><span class="sw" style="background:#3987e5"></span>cell: waiting</span>
+        <span><span class="sw" style="background:#d95926"></span>processing</span>
+        <span><span class="sw" style="background:#199e70"></span>ready, commit pending</span>
+        <span><span class="sw" style="background:#9085e9"></span>committed pulse</span>
+        <span><span class="sw" style="background:#3a3b40"></span>committed (done)</span>
+        <span><span class="sw" style="background:#e66767"></span>dead-lettered</span>
+        <span>bright row = leader copy · dim row = follower copy · thick colored line = partition owner</span>
+      </div>
+      <div class="journey">
+        <div><h2>Journey of <span id="journeyTitle" style="color:var(--ink)">the latest order</span></h2><div id="steps" class="empty">Send an order.</div></div>
+        <div><h2>Why</h2><div id="why" class="empty">Send an order.</div></div>
+        <div><h2>What just happened</h2><div class="log" id="log"><div class="empty">Send an order.</div></div></div>
+      </div>
+    </section>
+</main>
+
+<script>
+// Polling pages redraw often. Skip a redraw when the HTML is unchanged, so text
+// selection and open <details> survive, and the browser does less work.
+(() => { const d = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
+  Object.defineProperty(Element.prototype, 'innerHTML', { get: d.get, set(v) { if (this.__lastHTML !== undefined && this.__lastHTML === v) return; this.__lastHTML = v; d.set.call(this, v); } }); })();
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const api = (path, body) => fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }).then(r => r.json());
+const NS = 'http://www.w3.org/2000/svg';
+const PCOL = ['#3987e5', '#d95926', '#199e70', '#9085e9'];
+const BCOL = { 1: '#5aa0f0', 2: '#e8a04a', 3: '#3fbf8f' };
+const GCOL = { 'order-processor': '#d95926', analytics: '#9085e9', notifications: '#d55181' };
+const COL = { blue: '#3987e5', aqua: '#199e70', violet: '#9085e9', orange: '#d95926' };
+const MAIN = 'order-processor';
+const HOP = 1.8;                 // seconds a dot takes to travel one edge. Slow on purpose.
+const animEnd = new Map();       // order_id -> timestamp (ms) when its last scheduled animation ends
+// The slow, detailed animation is meant for a few orders at a time. Under real traffic
+// only a handful get drawn; the rest update the picture silently.
+const MAX_ANIMATED_ORDERS = 3, MAX_DOTS = 6;
+let liveDots = 0;
+const NW = 200, NH = 62, GAP = 16;
+const BW = 330, ROW = 30;        // broker card width, height of one partition-copy row inside it
+const X = { producer: 24, broker: 300, group: 300 + BW + 120 };
+const W = X.group + NW + 24;
+const fmtTime = (t) => new Date(t * 1000).toLocaleTimeString([], { hour12: false });
+const ms = (a, b) => ((b - a) * 1000).toFixed(0) + ' ms';
+const secs = (a, b) => (b - a).toFixed(1) + ' s';
+if (location.search.includes('embed')) document.body.classList.add('embed');
+let state = null, init = false;
+const nodes = {};
+const seen = new Map();          // order_id -> lifecycle stage animated so far
+const seenReaders = new Map();   // order_id -> Set(group)
+const logItems = [];
+const gcol = (g) => GCOL[g] || '#c98500';
+
+function el(tag, attrs, parent) { const e = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (parent) parent.appendChild(e); return e; }
+function text(parent, x, y, str, cls) { const t = el('text', { x, y, class: cls || '' }, parent); t.textContent = str; return t; }
+function edgePath(a, b) { const x1 = a.x + a.w, y1 = a.y + a.h / 2, x2 = b.x, y2 = b.y + b.h / 2, mx = (x1 + x2) / 2; return `M${x1} ${y1} C${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`; }
+function stack(n, top, bottom, h = NH, gap = GAP) { const total = n * h + (n - 1) * gap; const start = top + Math.max(0, (bottom - top - total) / 2); return Array.from({ length: n }, (_, i) => start + i * (h + gap)); }
+function node(parent, id, x, y, lines, opts = {}) {
+  const g = el('g', { class: 'node' + (opts.cls ? ' ' + opts.cls : ''), 'data-id': id }, parent);
+  const h = opts.h || NH;
+  el('rect', { x, y, width: NW, height: h, rx: 10, class: 'bg' }, g);
+  if (opts.color) el('rect', { x: x + 1, y: y + 10, width: 3, height: h - 20, rx: 2, fill: opts.color }, g);
+  lines.forEach((l, i) => text(g, x + 12, y + 18 + i * 14, l.text, l.cls));
+  if (opts.extra) opts.extra(g, x, y, h);
+  nodes[id] = { x, y, w: NW, h };
+  return g;
+}
+function colHead(parent, x, title, sub) { text(parent, x, 20, title.toUpperCase(), 'colhead'); if (sub) text(parent, x, 33, sub, 'colsub'); }
+
+let lastSig = '';
+function render() {
+  // Redraw the static layer only when something it shows has changed.
+  const sig = JSON.stringify([state.kafka.brokers, state.kafka.topics, state.kafka.groups, state.workers.map(w => [w.name, w.state]),
+    state.orders.filter(o => !o.committed).map(o => [o.order_id, !!o.consumed, !!o.processed])]);
+  if (sig === lastSig) return;
+  lastSig = sig;
+  const svg = $('#static'); svg.replaceChildren();   // not innerHTML='': that is a no-op when repeated (see top of script)
+  for (const k in nodes) delete nodes[k];
+  const k = state.kafka, brokers = k.brokers || [], ordersP = (k.topics && k.topics['orders']) || [];
+  const groups = (k.groups || []).filter(g => g.members.length && g.id !== 'shop-ui' && !g.id.startsWith('inspector') && !g.id.startsWith('shop-')).sort((a, b) => (a.id === MAIN ? -1 : b.id === MAIN ? 1 : a.id.localeCompare(b.id)));
+  const producers = Object.keys(state.producers || { web: 1 });
+  const bySource = {}; for (const o of state.orders) bySource[o.source || 'web'] = (bySource[o.source || 'web'] || 0) + 1;
+  const busyBy = {}; for (const o of state.orders) if (o.consumed && !o.processed && o.worker) busyBy[o.worker] = o;
+  const byOffset = new Map(); for (const o of state.orders) if (o.produced) byOffset.set(o.produced.partition + ':' + o.produced.offset, o);
+
+  const groupBoxH = (g) => 22 + Math.max(g.members.length, 1) * (NH + 10) + 8;
+  const totalGroupH = groups.reduce((a, g) => a + groupBoxH(g), 0) + Math.max(0, groups.length - 1) * 14;
+  const brokerH = (b) => 26 + ordersP.filter(p => p.replicas.includes(b.id)).length * ROW + 8;
+  const clusterInnerH = brokers.reduce((a, b) => a + brokerH(b), 0) + Math.max(0, brokers.length - 1) * 12;
+  const clusterH = 30 + clusterInnerH + 12;
+  const colH = Math.max(producers.length * (NH + GAP), clusterH, NH + GAP);
+  const TOP = 48, H = Math.max(300, TOP + Math.max(colH, totalGroupH) + 24);
+  $('#svg').setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const BOT = H - 12;
+
+  colHead(svg, X.producer, 'Producers', `${producers.length} apps sending orders`);
+  colHead(svg, X.broker, 'Kafka cluster', `${brokers.length} brokers · topic orders: ${ordersP.length} partitions, each copied to ${ordersP[0] ? ordersP[0].replicas.length : '?'} brokers`);
+  colHead(svg, X.group, 'Consumer groups', `${groups.length} reading orders`);
+
+  const edges = el('g', {}, svg);
+
+  stack(producers.length, TOP, BOT).forEach((y, i) => {
+    const src = producers[i];
+    node(svg, `producer:${src}`, X.producer, y, [{ text: src }, { text: (state.producers[src] || '').replace(/ \(.*\)/, ''), cls: 'small' }, { text: `${bySource[src] || 0} recent orders`, cls: 'mono' }], { color: COL.blue });
+  });
+
+  // the cluster: one dashed box, brokers inside, partition copies inside brokers
+  const cy0 = Math.max(TOP, TOP + (BOT - TOP - clusterH) / 2);
+  const cluster = el('g', { style: '--c:#898781' }, svg);
+  el('rect', { x: X.broker - 12, y: cy0, width: BW + 24, height: clusterH, rx: 14, class: 'groupbox' }, cluster);
+  text(cluster, X.broker, cy0 + 16, 'topic orders lives here, spread over the brokers', 'grouplabel');
+  let by = cy0 + 30;
+  if (!brokers.length) node(svg, 'broker?', X.broker, by, [{ text: 'no brokers reachable' }], {});
+  for (const b of brokers) {
+    const h = brokerH(b);
+    const g = el('g', { class: 'node', 'data-id': `broker${b.id}` }, svg);
+    el('rect', { x: X.broker, y: by, width: BW, height: h, rx: 10, class: 'bg' }, g);
+    el('rect', { x: X.broker + 1, y: by + 8, width: 3, height: h - 16, rx: 2, fill: BCOL[b.id] || '#898781' }, g);
+    text(g, X.broker + 12, by + 17, `broker ${b.id}`);
+    text(g, X.broker + 80, by + 17, `${b.host}:${b.port}`, 'mono');
+    for (let j = 0; j < 3; j++) el('rect', { x: X.broker + BW - 26, y: by + 8 + j * 6, width: 14, height: 4, rx: 1.5, fill: BCOL[b.id] || '#898781', opacity: .35 + j * .2 }, g);
+    nodes[`broker${b.id}`] = { x: X.broker, y: by, w: BW, h };
+    let ry = by + 26;
+    for (const p of ordersP.filter(p => p.replicas.includes(b.id))) {
+      const leader = p.leader === b.id, c = p.committed[MAIN], inSync = p.isr.includes(b.id);
+      const row = el('g', { class: 'node', 'data-id': `rep:${p.id}:${b.id}`, opacity: leader ? 1 : .55 }, svg);
+      el('rect', { x: X.broker + 10, y: ry, width: BW - 20, height: ROW - 4, rx: 6, fill: leader ? 'rgba(255,255,255,.06)' : 'rgba(255,255,255,.02)', stroke: leader ? PCOL[p.id % 4] : 'rgba(255,255,255,.08)', 'stroke-width': 1 }, row);
+      el('rect', { x: X.broker + 10, y: ry + 6, width: 3, height: ROW - 16, rx: 1.5, fill: PCOL[p.id % 4] }, row);
+      text(row, X.broker + 20, ry + 17, `p${p.id}`, 'mono').setAttribute('font-weight', '700');
+      text(row, X.broker + 46, ry + 17, leader ? `leader · ${p.high} events${c == null ? '' : ' · lag ' + (p.high - c)}` : (inSync ? 'copy · in sync' : 'copy · catching up'), 'small');
+      if (leader) {
+        const digits = String(Math.max(0, p.high - 1)).length, cw = Math.max(18, 7 + 5.5 * digits), SHOW = digits >= 4 ? 3 : 6, from = Math.max(p.low, p.high - SHOW);   // wider cells, fewer of them, once offsets reach 4 digits
+        for (let off = from; off < p.high; off++) {
+          const o = byOffset.get(p.id + ':' + off);
+          let fill = COL.blue;
+          if (o && o.processed && o.processed.status === 'dead_lettered') fill = '#e66767';
+          else if (c != null && off < c) fill = '#3a3b40';
+          else if (o && o.processed) fill = COL.aqua;
+          else if (o && o.consumed) fill = COL.orange;
+          const cx = X.broker + BW - 14 - (p.high - off) * (cw + 2);
+          el('rect', { x: cx, y: ry + 6, width: cw, height: ROW - 16, rx: 3, fill, class: 'cell', id: `cell-${p.id}-${off}` }, row);
+          const t = text(row, cx + cw / 2, ry + 16, String(off), 'small'); t.setAttribute('text-anchor', 'middle'); t.setAttribute('fill', fill === '#3a3b40' ? '#898781' : '#0d0d0d'); t.setAttribute('font-size', '9'); t.setAttribute('font-weight', '700');
+        }
+        nodes[`orders${p.id}`] = { x: X.broker + 10, y: ry, w: BW - 20, h: ROW - 4 };   // animations target the leader copy
+      }
+      nodes[`rep:${p.id}:${b.id}`] = { x: X.broker + 10, y: ry, w: BW - 20, h: ROW - 4 };
+      ry += ROW;
+    }
+    by += h + 12;
+  }
+
+  let gy = Math.max(TOP, TOP + (BOT - TOP - totalGroupH) / 2);
+  if (!groups.length) node(svg, 'nomember', X.group, stack(1, TOP, BOT)[0], [{ text: 'no consumers connected' }, { text: 'press + on a group above', cls: 'small' }, { text: 'orders will wait in the partitions', cls: 'small' }]);
+  for (const g of groups) {
+    const boxH = groupBoxH(g);
+    const box = el('g', { style: `--c:${gcol(g.id)}` }, svg);
+    el('rect', { x: X.group - 10, y: gy, width: NW + 20, height: boxH, rx: 12, class: 'groupbox' }, box);
+    text(box, X.group, gy + 14, `${g.id} · ${g.state.toLowerCase().replace('_', ' ')}`, 'grouplabel');
+    if (!g.members.length) node(svg, `member:${g.id}:none`, X.group, gy + 24, [{ text: 'no members' }, { text: 'offsets are remembered', cls: 'small' }, { text: 'lag keeps counting', cls: 'small' }], { color: gcol(g.id) });
+    g.members.forEach((m, i) => {
+      const busy = busyBy[m.client_id];
+      node(svg, `member:${g.id}:${m.client_id}`, X.group, gy + 24 + i * (NH + 10), [{ text: m.client_id }, { text: `owns ${m.assigned.length ? m.assigned.map(x => 'p' + x).join(' ') : 'nothing'}`, cls: 'mono' }, { text: busy ? `busy: ${busy.customer} @${busy.produced.offset}` : (g.id === MAIN ? 'idle' : 'reading, no side effects'), cls: 'small' }], { color: gcol(g.id), cls: busy ? 'busy' : '' });
+    });
+    gy += boxH + 14;
+  }
+
+  for (const src of producers) for (const b of brokers) el('path', { d: edgePath(nodes[`producer:${src}`], nodes[`broker${b.id}`]), class: 'edge' }, edges);
+  for (const g of groups) for (const p of ordersP) { const o = p.owner[g.id]; if (o && nodes[`orders${p.id}`] && nodes[`member:${g.id}:${o}`]) el('path', { d: edgePath(nodes[`orders${p.id}`], nodes[`member:${g.id}:${o}`]), class: 'edge owner', stroke: gcol(g.id) }, edges); }
+  svg.insertBefore(edges, svg.querySelector('.node, g[style]'));
+}
+
+function travel(fromId, toId, color, delay = 0) {
+  const a = nodes[fromId], b = nodes[toId]; if (!a || !b) return;
+  // SMIL "begin" counts from page load, so animations must be started by hand when their turn comes.
+  setTimeout(() => {
+    if (liveDots >= MAX_DOTS) { highlight(toId, color); return; }   // too busy: just light the target
+    liveDots++; setTimeout(() => { liveDots--; }, HOP * 1000 + 50);
+    const svg = $('#anim'), d = edgePath(a, b);
+    const path = el('path', { d, class: 'edge hot', stroke: color }, svg);
+    const launch = (r, cls, op) => {
+      const c = el('circle', { class: cls, r, fill: color, opacity: op }, svg);
+      const m = el('animateMotion', { dur: `${HOP}s`, begin: 'indefinite', fill: 'freeze', path: d }, c);
+      m.beginElement();
+      return c;
+    };
+    const halo = launch(12, 'halo', .25);   // a soft disc instead of a blur filter: same look, no per-frame filter cost
+    const head = launch(6, 'dot', 1);
+    setTimeout(() => { head.remove(); halo.remove(); path.remove(); highlight(toId, color); }, HOP * 1000);
+  }, delay * 1000);
+}
+function highlight(id, color) {
+  // The dot arrived: light the node up, then let it fade.
+  const n = nodes[id]; if (!n) return;
+  const g = $('#anim');
+  const fill = el('rect', { x: n.x, y: n.y, width: n.w, height: n.h, rx: 10, fill: color, opacity: .22 }, g);
+  const ring = el('rect', { x: n.x - 3, y: n.y - 3, width: n.w + 6, height: n.h + 6, rx: 12, fill: 'none', stroke: color, 'stroke-width': 2.5 }, g);
+  for (const e of [fill, ring]) { const a = el('animate', { attributeName: 'opacity', from: e === fill ? .22 : 1, to: 0, dur: '1.6s', begin: 'indefinite', fill: 'freeze' }, e); a.beginElement(); }
+  setTimeout(() => { fill.remove(); ring.remove(); }, 1700);
+}
+function flashCell(partition, offset, color) {
+  const c = document.getElementById(`cell-${partition}-${offset}`); if (!c) return;
+  const r = el('rect', { x: c.getAttribute('x') - 2, y: c.getAttribute('y') - 2, width: +c.getAttribute('width') + 4, height: +c.getAttribute('height') + 4, rx: 4, fill: 'none', stroke: color, 'stroke-width': 2 }, $('#anim'));
+  const a = el('animate', { attributeName: 'opacity', from: 1, to: 0, dur: '1.4s', begin: 'indefinite', fill: 'freeze' }, r);
+  a.beginElement();
+  setTimeout(() => r.remove(), 1500);
+}
+function pulse(id, color) {
+  const n = nodes[id]; if (!n) return;
+  const r = el('rect', { x: n.x - 3, y: n.y - 3, width: n.w + 6, height: n.h + 6, rx: 12, fill: 'none', stroke: color, 'stroke-width': 2 }, $('#anim'));
+  const a = el('animate', { attributeName: 'opacity', from: 1, to: 0, dur: '1.6s', begin: 'indefinite', fill: 'freeze' }, r);
+  a.beginElement();
+  setTimeout(() => r.remove(), 1700);
+}
+function log(o, html) {
+  logItems.unshift({ t: state.now, who: `${o.customer}'s ${o.quantity} × ${o.item}`, html });
+  logItems.splice(60);
+  $('#log').innerHTML = logItems.map(e => `<div class="ev"><div class="t">${fmtTime(e.t)}</div><div class="path"><b>${esc(e.who)}</b> ${e.html}</div></div>`).join('');
+}
+
+function animateChanges() {
+  const ordersP = (state.kafka.topics && state.kafka.topics['orders']) || [];
+  const nowMs = Date.now();
+  let animating = [...animEnd.entries()].filter(([, t]) => t > nowMs).length;
+  for (const o of [...state.orders].reverse()) {
+    const prev = seen.get(o.order_id) ?? -1;
+    // Over the cap: record the stage, draw nothing. The static picture still updates every second.
+    if (!animEnd.has(o.order_id) && animating >= MAX_ANIMATED_ORDERS) {
+      let st = 0; if (o.produced) st = 1; if (o.consumed) st = 2; if (o.processed) st = 3; if (o.committed) st = 4;
+      seen.set(o.order_id, st); seenReaders.set(o.order_id, new Set(Object.keys(o.readers || {})));
+      continue;
+    }
+    if (!animEnd.has(o.order_id)) animating++;
+    let stage = 0; if (o.produced) stage = 1; if (o.consumed) stage = 2; if (o.processed) stage = 3; if (o.committed) stage = 4;
+    const p = o.produced, part = p && ordersP.find(x => x.id === p.partition);
+    const leader = part ? part.leader : (state.kafka.brokers[0] || {}).id;
+    const src = o.source || 'web';
+    let d = Math.max(0, ((animEnd.get(o.order_id) || 0) - Date.now()) / 1000);   // wait for this order's earlier hops
+    if (stage > prev) {
+      if (prev < 1 && stage >= 1 && p) {
+        travel(`producer:${src}`, `broker${leader}`, COL.blue, d); d += HOP;
+        setTimeout(() => { highlight(`orders${p.partition}`, COL.blue); for (const r of (part ? part.replicas : [])) if (r !== leader) highlight(`rep:${p.partition}:${r}`, 'rgba(255,255,255,.5)'); }, d * 1000); d += 1.0;
+        log(o, `→ <i>produced.</i> <b>${esc(src)}</b> sent it with key <b>${esc(o.key ?? 'null')}</b> to <b>broker ${leader}</b>, the leader for orders/p${p.partition}. Written at offset <b>${p.offset}</b>, copied to ${part ? part.replicas.length - 1 : '?'} follower broker(s), acknowledged.`);
+      }
+      if (prev < 2 && stage >= 2 && p) { travel(`orders${p.partition}`, `member:${MAIN}:${o.worker}`, COL.blue, d); d += HOP; log(o, `→ <i>consumed.</i> <b>${esc(o.worker)}</b> polled it: group <b>${MAIN}</b> assigned p${p.partition} to it. Nothing committed yet.`); }
+      if (prev < 3 && stage >= 3 && p) {
+        const bad = o.processed.status === 'dead_lettered';
+        setTimeout(() => flashCell(p.partition, p.offset, bad ? '#e66767' : COL.aqua), d * 1000); d += 0.8;
+        log(o, bad ? `→ <i>dead-lettered:</i> ${esc(o.processed.reason)}. Copied to <b>orders.dlq</b>.` : `→ <i>processed</i> after ${secs(o.consumed.at, o.processed.at)}. ${esc(o.worker)} marks offset ${p.offset} on p${p.partition} ready (green cell) and reports it via order-status.`);
+      }
+      if (prev < 4 && stage >= 4 && p) { setTimeout(() => { pulse(`orders${p.partition}`, COL.violet); flashCell(p.partition, p.offset, COL.violet); }, d * 1000); d += 0.8; log(o, `→ <i>committed.</i> ${esc(o.worker)} told the group coordinator: <b>${MAIN}</b> is done up to offset <b>${p.offset + 1}</b> on p${p.partition}. The cell goes grey; lag drops by one.`); }
+      seen.set(o.order_id, stage);
+      animEnd.set(o.order_id, Date.now() + d * 1000);
+    }
+    if (stage >= 4 && (animEnd.get(o.order_id) || 0) < nowMs) animEnd.delete(o.order_id);
+    if (o.readers && p) {
+      const done = seenReaders.get(o.order_id) || new Set();
+      for (const [g, r] of Object.entries(o.readers)) {
+        if (done.has(g)) continue;
+        done.add(g);
+        travel(`orders${p.partition}`, `member:${g}:${r.worker}`, gcol(g), d); d += HOP; animEnd.set(o.order_id, Date.now() + d * 1000);
+        log(o, `→ <i>also read by</i> <b>${esc(r.worker)}</b> in group <b>${esc(g)}</b>. Same event, separate bookmark. ${MAIN} is not affected.`);
+      }
+      seenReaders.set(o.order_id, done);
+    }
+  }
+}
+
+function renderJourney() {
+  const o = state.orders[0];
+  if (!o) { $('#steps').innerHTML = '<div class="empty">Send an order.</div>'; $('#why').innerHTML = ''; return; }
+  $('#journeyTitle').textContent = `${o.customer}'s ${o.quantity} × ${o.item} (from ${o.source || 'web'})`;
+  const ordersP = (state.kafka.topics && state.kafka.topics['orders']) || [];
+  const p = o.produced, pt = p && ordersP.find(x => x.id === p.partition);
+  const committed = pt ? pt.committed[MAIN] : null, owner = pt && pt.owner[MAIN];
+  const ownerBusy = owner && state.orders.find(x => x.worker === owner && x.consumed && !x.processed && x.order_id !== o.order_id);
+  const ahead = p && committed != null ? Math.max(0, p.offset - committed) : null;
+  const bad = o.processed && o.processed.status === 'dead_lettered';
+  const t0 = o.created_at, steps = [];
+  steps.push({ s: 'done', t: '0 ms', h: `${esc(o.source || 'web')} creates the event`, b: `Key <span class="mono">${o.key == null ? 'null' : esc(o.key)}</span>, value is the order as JSON. Nothing has left the app yet.` });
+  if (p) steps.push({ s: 'done', t: ms(t0, p.at), h: `Broker ${pt ? pt.leader : ''} appends it to orders / partition ${p.partition} at offset ${p.offset}`, b: `The leader wrote it to its log${pt && pt.replicas.length > 1 ? `, followers ${pt.replicas.filter(r => r !== pt.leader).map(r => 'B' + r).join(', ')} copied it` : ''}, then acknowledged. The offset is permanent now. This is "produced".` });
+  else steps.push({ s: 'now', t: '', h: 'Waiting for the broker to acknowledge', b: 'The producer batches for a few ms, then sends.' });
+  if (o.consumed) steps.push({ s: 'done', t: ms(t0, o.consumed.at), h: `${esc(o.worker)} polls it`, b: `It owns partition ${p.partition}, so it got this message. The order sat in the log for ${ms(p.at, Math.max(p.at, o.consumed.at))}. This is "consumed". Nothing committed yet.` });
+  else if (p && !owner) {
+    const readBy = Object.keys(o.readers || {});
+    steps.push({ s: 'now', t: '', h: `Stored in partition ${p.partition}, waiting for a worker`, b: `No member of <b>order-processor</b> owns this partition right now, so nobody is doing the work. ${readBy.length ? `(${readBy.join(' and ')} read it, but those groups only read; they do not process orders.) ` : ''}Press + on order-processor above.` });
+  }
+  else if (p && ownerBusy) steps.push({ s: 'now', t: '', h: `Stored in partition ${p.partition}, waiting for a worker`, b: `${esc(owner)} owns this partition but is busy with ${esc(ownerBusy.customer)}'s order at offset ${ownerBusy.produced.offset}. ${ahead == null ? 'Yours is queued.' : ahead <= 1 ? 'Yours is next.' : (ahead - 1) + ' more are queued ahead of yours.'} One message at a time, in offset order.` });
+  else if (p) steps.push({ s: 'now', t: '', h: `Stored in partition ${p.partition}, waiting for a worker`, b: `${esc(owner)} owns this partition and is idle. The hand-over takes a few ms.` });
+  else steps.push({ s: 'todo', t: '', h: 'Stored in a partition, waiting for a worker', b: '' });
+  if (o.retries) steps.push({ s: o.processed ? 'done' : 'now', t: '', h: `Attempt ${o.retries} failed: ${esc(o.last_error)}`, b: 'Transient error. The worker waits (0.2 s, 0.4 s, 0.8 s) and retries the same message. Nothing is committed, nothing is lost.' });
+  if (o.processed) steps.push({ s: bad ? 'bad' : 'done', t: ms(t0, o.processed.at), h: bad ? `Gave up: ${esc(o.processed.reason)}` : 'Work finished, result published', b: bad ? 'The order was copied to <span class="mono">orders.dlq</span> with the reason, and a "dead_lettered" event went to <span class="mono">order-status</span>.' : `Took ${secs(o.consumed.at, o.processed.at)}. The cell for offset ${p.offset} turns green. The worker also publishes a "ready" event on <span class="mono">order-status</span>. This is "processed".` });
+  else if (o.consumed) steps.push({ s: 'now', t: '', h: 'Processing', b: `${esc(o.worker)} is doing the pretend work. ${secs(o.consumed.at, state.now)} so far.` });
+  else steps.push({ s: 'todo', t: '', h: 'Processing', b: '' });
+  if (o.committed) steps.push({ s: 'done', t: ms(t0, o.committed.at), h: `Offset ${p.offset + 1} committed`, b: `The worker told Kafka "group ${MAIN} is done up to ${p.offset + 1} on partition ${p.partition}". A restart would resume after this message. This is "committed".` });
+  else if (o.processed) steps.push({ s: 'now', t: '', h: 'Commit pending', b: 'Work is done but the offset is not stored yet. If the worker died now, this order would be processed again after a restart.' });
+  else steps.push({ s: 'todo', t: '', h: 'Commit', b: '' });
+  if (o.readers) for (const [g, r] of Object.entries(o.readers)) steps.push({ s: 'done', t: ms(t0, r.at), h: `Also read by ${esc(r.worker)} (group ${esc(g)})`, b: 'A second consumer group keeps its own committed offset on the same partition. Reading does not remove the event.' });
+  $('#steps').innerHTML = steps.map((x, i) => `<div class="step ${x.s}"><div class="dot2">${x.s === 'done' ? '✓' : x.s === 'bad' ? '!' : i + 1}</div><div><b>${x.h}</b>${x.t ? `<span class="t">+${x.t}</span>` : ''}${x.b ? `<p>${x.b}</p>` : ''}</div></div>`).join('');
+  const whys = [];
+  if (p) whys.push(`<b>Why partition ${p.partition}?</b> ${o.key == null ? 'No key, so the producer chose. No ordering guarantee between orders.' : `Kafka hashed the key "${esc(o.key)}" (murmur2) and took it mod ${ordersP.length || 3}. Every order with this key goes here, so one customer's orders stay in order.`}`);
+  if (pt) whys.push(`<b>Why broker ${pt.leader}?</b> It is the leader for partition ${p.partition}. ${pt.replicas.length > 1 ? `Brokers ${pt.replicas.filter(r => r !== pt.leader).map(r => 'B' + r).join(' and ')} hold copies. If broker ${pt.leader} dies, one of them takes over.` : 'No other copies: one broker only.'}`);
+  if (owner) whys.push(`<b>Why ${esc(owner)}?</b> Group ${MAIN} assigned partition ${p.partition} to it. Only one member of a group reads a partition at a time.`);
+  $('#why').className = ''; $('#why').innerHTML = whys.map(w => `<div class="why">${w}</div>`).join('');
+}
+
+function renderControls() {
+  document.querySelectorAll('.stepper').forEach(st => { if (!st.querySelector('button').disabled) st.querySelector('.n').textContent = state.workers.filter(x => x.group === st.dataset.group && x.state === 'running').length; });
+}
+
+async function refresh() {
+  try {
+    state = await fetch('/api/flow?limit=40').then(r => r.json());
+    if (!init) {
+      $('#customer').innerHTML = state.customers.map(c => `<option>${c}</option>`).join(''); init = true;
+      for (const o of state.orders) { seen.set(o.order_id, 4); seenReaders.set(o.order_id, new Set(Object.keys(o.readers || {}))); }
+      // Default: one slow worker, so the first order you send has something to flow to.
+      if (!state.workers.some(w => w.group === 'order-processor' && w.state === 'running')) { await api('/api/flow/group', { group: 'order-processor', members: 1 }); state = await fetch('/api/flow?limit=40').then(r => r.json()); }
+    }
+    renderControls(); render(); animateChanges(); renderJourney();
+  } catch (e) { console.error(e); }
+}
+document.querySelectorAll('.stepper button').forEach(b => b.onclick = async () => {
+  const st = b.closest('.stepper'), num = st.querySelector('.n');
+  const n = Math.max(0, +num.textContent + (+b.dataset.d));
+  st.querySelectorAll('button').forEach(x => x.disabled = true);   // no double clicks while the worker boots
+  num.textContent = n;
+  try {
+    const r = await api('/api/flow/group', { group: st.dataset.group, members: n });
+    num.textContent = r.members ? r.members.length : n;
+  } catch (e) {
+    num.textContent = n - (+b.dataset.d);
+    alert('Could not reach the shop service. Is `make shop` running?');
+  } finally {
+    setTimeout(() => st.querySelectorAll('button').forEach(x => x.disabled = false), 800);
+  }
+  refresh();
+});
+async function send(n) {
+  const items = Object.keys(state.menu);
+  for (let i = 0; i < n; i++) await api('/api/orders', { customer: $('#customer').value, item: items[Math.floor(Math.random() * items.length)], quantity: 1 + Math.floor(Math.random() * 3), key_mode: 'customer' });
+  refresh();
+}
+$('#send').onclick = () => send(1);
+$('#send3').onclick = () => send(3);
+refresh();
+// When embedded in the Lab, a hidden tab stops polling and animating; the Lab tells us.
+let labVisible = true;
+window.addEventListener('message', (e) => { if (e.data && e.data.type === 'lab-visible') { labVisible = !!e.data.visible; if (labVisible) refresh(); } });
+setInterval(() => { if (labVisible) refresh(); }, 1000);
+</script>
+</body>
+</html>

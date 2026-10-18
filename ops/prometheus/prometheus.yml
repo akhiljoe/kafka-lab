@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: kafka-exporter
+    static_configs:
+      - targets: ["kafka-exporter:9308"]
+
+  # The inspector service running on your Mac exposes app-level metrics too.
+  - job_name: kafka-inspector
+    static_configs:
+      - targets: ["host.docker.internal:8080"]
+
+  - job_name: shop
+    static_configs:
+      - targets: ["host.docker.internal:8000"]

@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kafka Inspector</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --surface-2: #222221; --border: rgba(255,255,255,.10);
+    --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781; --grid: #2c2c2a; --axis: #383835;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+    --good: #0ca30c; --warn: #fab219; --serious: #ec835a; --crit: #d03b3b;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink); font-size: 14px; line-height: 1.4; }
+  header { display: flex; align-items: center; gap: 14px; padding: 14px 24px; border-bottom: 1px solid var(--border); background: var(--surface); position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 17px; margin: 0; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 12px; font-family: ui-monospace, Menlo, monospace; }
+  header .right { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+  header a { color: var(--ink-2); text-decoration: none; border: 1px solid var(--border); padding: 6px 12px; border-radius: 8px; font-size: 13px; }
+  .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--ink-2); }
+  .pill::before { content: "●"; margin-right: 5px; color: var(--good); }
+  .pill.bad::before { color: var(--crit); }
+  main { padding: 16px 24px; max-width: 1700px; display: flex; flex-direction: column; gap: 16px; }
+  @media (max-width: 900px) { main { padding: 16px; } }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+  .tile .l { color: var(--muted); font-size: 12px; }
+  .tile .v { font-size: 26px; font-weight: 600; margin-top: 2px; }
+  .tile .v small { font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 4px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid-3-2 { display: grid; grid-template-columns: 3fr 2fr; gap: 16px; }
+  @media (max-width: 1100px) { .grid2, .grid-3-2 { grid-template-columns: 1fr; } }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; min-width: 0; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+  .card h2 .spacer { flex: 1; }
+  .tabs { display: flex; gap: 4px; }
+  .tabs button { background: transparent; border: 1px solid transparent; color: var(--ink-2); padding: 4px 10px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 13px; }
+  .tabs button.active { background: var(--surface-2); border-color: var(--border); color: var(--ink); }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th { text-align: left; color: var(--muted); font-weight: 500; font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--grid); }
+  td { padding: 6px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; vertical-align: top; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--ink-2); }
+  .scroll { overflow-x: auto; }
+  .part { display: inline-block; min-width: 22px; text-align: center; border-radius: 6px; padding: 1px 6px; font-weight: 600; font-size: 12px; color: #fff; }
+  .p0 { background: var(--s1); } .p1 { background: var(--s2); } .p2 { background: var(--s3); } .p3 { background: var(--s7); } .px { background: var(--muted); }
+  .state { font-size: 11px; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border); color: var(--ink-2); }
+  .state.STABLE { border-color: rgba(12,163,12,.5); } .state.EMPTY, .state.DEAD { color: var(--muted); }
+  .state.PREPARING_REBALANCING, .state.COMPLETING_REBALANCING { border-color: rgba(250,178,25,.6); color: #ffd98a; }
+
+  /* partition lanes */
+  .lane { display: grid; grid-template-columns: 56px 1fr 150px; gap: 12px; align-items: center; padding: 8px 0 18px; border-bottom: 1px solid var(--grid); }
+  .lane:last-child { border-bottom: 0; }
+  .lane .bar { position: relative; height: 34px; background: var(--surface-2); border-radius: 6px; overflow: visible; }
+  .lane .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; opacity: .22; }
+  .lane .mark { position: absolute; top: -4px; bottom: -4px; width: 3px; border-radius: 2px; transform: translateX(-50%); }
+  .lane .mark .tag { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); font-size: 10px; color: var(--ink-2); white-space: nowrap; margin-top: 2px; font-family: ui-monospace, Menlo, monospace; }
+  .lane .range { position: absolute; inset: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 8px; font-size: 11px; color: var(--ink-2); font-family: ui-monospace, Menlo, monospace; pointer-events: none; }
+  .lane .meta { font-size: 11px; color: var(--muted); line-height: 1.3; }
+  .lane .meta b { color: var(--ink-2); font-weight: 500; }
+  .lanes { padding-bottom: 14px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--ink-2); margin-top: 10px; }
+  .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; background: var(--c); }
+
+  /* chart */
+  .chart { position: relative; }
+  .chart svg { width: 100%; height: 180px; display: block; }
+  .chart .tip { position: absolute; pointer-events: none; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 12px; display: none; z-index: 2; }
+  .chart .tip b { color: var(--ink); font-weight: 500; }
+  .chart .tip div { color: var(--ink-2); }
+
+  .events { max-height: 260px; overflow: auto; font-size: 12px; }
+  .ev { display: grid; grid-template-columns: 70px 70px 1fr; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--grid); }
+  .ev .k { color: var(--muted); }
+  .ev .k.join { color: #9be29b; } .ev .k.leave { color: #ffb3b3; } .ev .k.assign { color: #ffd98a; } .ev .k.state { color: var(--ink-2); }
+  .msg-val { max-width: 520px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .member { padding: 6px 0; border-bottom: 1px solid var(--grid); }
+  .member:last-child { border-bottom: 0; }
+  .member .parts { margin-left: 6px; }
+  .group { border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 10px; background: var(--surface-2); }
+  .group .head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .group .head b { flex: 1; }
+  body.simple .advanced { display: none; }
+  body.simple #clusterId { display: none; }
+  body.simple #tail tr:nth-child(n+11) { display: none; }
+  .switch { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); cursor: pointer; }
+  .switch input { accent-color: var(--s1); }
+  .err { background: rgba(208,59,59,.15); border: 1px solid var(--crit); padding: 8px 12px; border-radius: 8px; font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Kafka Inspector</h1>
+  <span class="sub" id="clusterId"></span>
+  <div class="right">
+    <label class="switch" title="Hide charts and broker details. Keep partitions, groups and messages."><input type="checkbox" id="simple"> Beginner view</label>
+    <span class="pill" id="health">live</span>
+    <a href="http://localhost:8000" target="_blank">Lab ↗</a>
+    <a href="http://localhost:8081" target="_blank">Kafka UI ↗</a>
+    <a href="http://localhost:3000" target="_blank">Grafana ↗</a>
+  </div>
+</header>
+<main>
+  <div id="error" class="err" style="display:none"></div>
+  <div class="tiles advanced" id="tiles"></div>
+
+  <section class="card">
+    <h2>Partitions of <span id="topicName" style="color:var(--ink)"></span> <span class="spacer"></span> <span class="tabs" id="topicTabs"></span></h2>
+    <div class="lanes" id="lanes"></div>
+    <div class="legend" id="laneLegend"></div>
+    <div class="hint">Each bar is one partition's log: from log start offset (left) to log end offset (right, where the next message lands). B1 = broker 1 is the leader. Bars share one scale. A vertical marker is a consumer group's committed offset. The gap between marker and right edge is that group's lag on the partition. The label on the right says which member owns the partition right now.</div>
+  </section>
+
+  <div class="grid-3-2 advanced">
+    <section class="card">
+      <h2>Messages per second <span class="spacer"></span><span class="tabs" id="chartTabs"></span></h2>
+      <div class="chart" id="rateChart"><svg></svg><div class="tip"></div></div>
+      <div class="legend" id="rateLegend"></div>
+    </section>
+    <section class="card">
+      <h2>Consumer lag over time</h2>
+      <div class="chart" id="lagChart"><svg></svg><div class="tip"></div></div>
+      <div class="legend" id="lagLegend"></div>
+    </section>
+  </div>
+
+  <div class="grid2">
+    <section class="card">
+      <h2>Consumer groups</h2>
+      <div id="groups"></div>
+    </section>
+    <section class="card">
+      <h2>Group change log <span class="spacer"></span><span class="hint" style="margin:0">rebalances, joins, leaves, reassignments</span></h2>
+      <div class="events" id="events"></div>
+    </section>
+  </div>
+
+  <div class="grid2">
+    <section class="card">
+      <h2>Live messages on <span id="tailTopic" style="color:var(--ink)"></span></h2>
+      <div class="scroll"><table>
+        <thead><tr><th>Time</th><th>Part</th><th>Offset</th><th>Key</th><th>Value</th></tr></thead>
+        <tbody id="tail"></tbody>
+      </table></div>
+      <div class="hint">Read with a throwaway group that never commits, so the inspector does not show up as a real consumer of your data.</div>
+    </section>
+    <section class="card advanced">
+      <h2>Brokers &amp; topics</h2>
+      <div class="scroll"><table>
+        <thead><tr><th>Broker</th><th>Address</th><th>Role</th><th>Leader of</th></tr></thead>
+        <tbody id="brokers"></tbody>
+      </table></div>
+      <div style="height:12px"></div>
+      <div class="scroll"><table>
+        <thead><tr><th>Topic</th><th>Partitions</th><th>Messages</th><th>Replication / ISR</th></tr></thead>
+        <tbody id="topics"></tbody>
+      </table></div>
+    </section>
+  </div>
+</main>
+
+<script>
+// Polling pages redraw often. Skip a redraw when the HTML is unchanged, so text
+// selection and open <details> survive, and the browser does less work.
+(() => { const d = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
+  Object.defineProperty(Element.prototype, 'innerHTML', { get: d.get, set(v) { if (this.__lastHTML !== undefined && this.__lastHTML === v) return; this.__lastHTML = v; d.set.call(this, v); } }); })();
+const $ = (s) => document.querySelector(s);
+const SERIES = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'];
+const GROUP_COLORS = {};
+let snap = null, selectedTopic = null, chartTopic = null;
+
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmtTime = (t) => new Date(t * 1000).toLocaleTimeString([], { hour12: false });
+const compact = (n) => n == null ? '–' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'K' : String(Math.round(n * 10) / 10);
+const groupColor = (g) => GROUP_COLORS[g] ??= SERIES[Object.keys(GROUP_COLORS).length % SERIES.length];
+const partClass = (p) => 'part p' + (p < 4 ? p : 'x');
+const last = (arr) => arr.length ? arr[arr.length - 1].v : 0;
+
+function tile(label, value, extra) {
+  return `<div class="tile"><div class="l">${label}</div><div class="v">${value}${extra ? `<small>${extra}</small>` : ''}</div></div>`;
+}
+
+function renderTiles() {
+  const s = snap;
+  const parts = s.topics.reduce((a, t) => a + t.partitions.length, 0);
+  const produced = Object.values(s.produced_rate).reduce((a, r) => a + last(r), 0);
+  const consumed = Object.values(s.consumed_rate).reduce((a, r) => a + last(r), 0);
+  const lag = s.groups.reduce((a, g) => a + g.lag, 0);
+  $('#tiles').innerHTML = [
+    tile('Brokers', s.brokers.length), tile('Topics', s.topics.length), tile('Partitions', parts),
+    tile('Consumer groups', s.groups.length),
+    tile('Produced', compact(produced), 'msg/s'), tile('Committed', compact(consumed), 'msg/s'),
+    tile('Total lag', compact(lag), 'messages'),
+  ].join('');
+}
+
+function renderLanes() {
+  const s = snap;
+  if (!selectedTopic || !s.topics.find(t => t.name === selectedTopic)) selectedTopic = (s.topics.find(t => t.name === 'orders') || s.topics[0] || {}).name;
+  $('#topicTabs').innerHTML = s.topics.map(t => `<button class="${t.name === selectedTopic ? 'active' : ''}" onclick="selectTopic('${t.name}')">${esc(t.name)}</button>`).join('');
+  $('#topicName').textContent = selectedTopic || '–';
+  $('#tailTopic').textContent = selectedTopic || '–';
+  const topic = s.topics.find(t => t.name === selectedTopic);
+  if (!topic) { $('#lanes').innerHTML = '<div class="hint">no topics</div>'; return; }
+  const lo = Math.min(...topic.partitions.map(p => p.low));
+  const hi = Math.max(...topic.partitions.map(p => p.high));
+  const span = Math.max(hi - lo, 1);
+  const x = (off) => ((off - lo) / span * 100).toFixed(2) + '%';
+  const groupsHere = s.groups.filter(g => g.partitions.some(p => p.topic === topic.name));
+  $('#lanes').innerHTML = topic.partitions.map(p => {
+    const marks = groupsHere.map(g => {
+      const gp = g.partitions.find(q => q.topic === topic.name && q.partition === p.id);
+      if (!gp || gp.committed == null) return '';
+      return `<div class="mark" style="left:${x(gp.committed)};background:${groupColor(g.id)}" title="${esc(g.id)} committed ${gp.committed}, lag ${gp.lag}"><span class="tag">${gp.lag > 0 ? 'lag ' + gp.lag : '✓'}</span></div>`;
+    }).join('');
+    const owners = groupsHere.map(g => {
+      const gp = g.partitions.find(q => q.topic === topic.name && q.partition === p.id);
+      return `<div><span style="color:${groupColor(g.id)}">●</span> <b>${esc(gp && gp.owner ? gp.owner : 'unassigned')}</b></div>`;
+    }).join('') || '<div>no consumer group</div>';
+    return `<div class="lane">
+      <div><span class="${partClass(p.id)}">${p.id}</span> <span class="mono" title="leader: broker ${p.leader}">B${p.leader}</span></div>
+      <div class="bar">
+        <div class="fill" style="left:${x(p.low)};width:${((p.high - p.low) / span * 100).toFixed(2)}%;background:${SERIES[p.id % 8]}"></div>
+        <div class="range"><span>${p.low}</span><span>${p.messages} msgs</span><span>${p.high}</span></div>
+        ${marks}
+      </div>
+      <div class="meta">${owners}</div>
+    </div>`;
+  }).join('');
+  $('#laneLegend').innerHTML = groupsHere.map(g => `<span style="--c:${groupColor(g.id)}">${esc(g.id)} committed offset</span>`).join('') +
+    `<span style="--c:#3987e5;opacity:.6">partition log</span>`;
+}
+
+function lineChart(el, series, { unit = '', tip }) {
+  const svg = el.querySelector('svg');
+  const W = svg.clientWidth || 600, H = 180, padL = 40, padR = 12, padT = 10, padB = 22;
+  const all = series.flatMap(s => s.points);
+  if (!all.length) { svg.innerHTML = `<text x="${W / 2}" y="${H / 2}" fill="#898781" font-size="12" text-anchor="middle">waiting for data</text>`; return; }
+  const t0 = Math.min(...all.map(p => p.t)), t1 = Math.max(...all.map(p => p.t), t0 + 60);
+  const vmax = Math.max(1, ...all.map(p => p.v)) * 1.1;
+  const X = (t) => padL + (t - t0) / (t1 - t0) * (W - padL - padR);
+  const Y = (v) => padT + (1 - v / vmax) * (H - padT - padB);
+  const ticks = [0, vmax / 2, vmax];
+  let out = ticks.map(v => `<line x1="${padL}" x2="${W - padR}" y1="${Y(v)}" y2="${Y(v)}" stroke="#2c2c2a"/><text x="${padL - 6}" y="${Y(v) + 4}" fill="#898781" font-size="11" text-anchor="end">${compact(v)}</text>`).join('');
+  for (let i = 0; i <= 3; i++) {
+    const t = t0 + (t1 - t0) * i / 3;
+    out += `<text x="${X(t)}" y="${H - 6}" fill="#898781" font-size="11" text-anchor="${i === 0 ? 'start' : i === 3 ? 'end' : 'middle'}">${fmtTime(t)}</text>`;
+  }
+  for (const s of series) {
+    if (!s.points.length) continue;
+    const d = s.points.map((p, i) => (i ? 'L' : 'M') + X(p.t).toFixed(1) + ' ' + Y(p.v).toFixed(1)).join(' ');
+    const lastP = s.points[s.points.length - 1];
+    out += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    out += `<circle cx="${X(lastP.t)}" cy="${Y(lastP.v)}" r="4" fill="${s.color}" stroke="#1a1a19" stroke-width="2"/>`;
+  }
+  out += `<line id="xh" x1="0" x2="0" y1="${padT}" y2="${H - padB}" stroke="#898781" stroke-width="1" style="display:none"/>`;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.innerHTML = out;
+  const tipEl = el.querySelector('.tip');
+  svg.onmousemove = (e) => {
+    const r = svg.getBoundingClientRect();
+    const t = t0 + (e.clientX - r.left - padL) / (W - padL - padR) * (t1 - t0);
+    const rows = series.map(s => {
+      let best = null;
+      for (const p of s.points) if (!best || Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
+      return best ? `<div><span style="color:${s.color}">●</span> ${esc(s.name)}: ${compact(best.v)}${unit}</div>` : '';
+    }).join('');
+    tipEl.innerHTML = `<b>${fmtTime(t)}</b>${rows}`;
+    tipEl.style.display = 'block';
+    tipEl.style.left = Math.min(e.clientX - r.left + 12, r.width - 200) + 'px';
+    tipEl.style.top = (e.clientY - r.top - 10) + 'px';
+    const xh = svg.querySelector('#xh'); xh.style.display = ''; xh.setAttribute('x1', X(t)); xh.setAttribute('x2', X(t));
+  };
+  svg.onmouseleave = () => { tipEl.style.display = 'none'; svg.querySelector('#xh').style.display = 'none'; };
+}
+
+function renderCharts() {
+  const s = snap;
+  const topics = Object.keys(s.produced_rate);
+  if (!chartTopic || !topics.includes(chartTopic)) chartTopic = topics.includes('orders') ? 'orders' : topics[0];
+  $('#chartTabs').innerHTML = topics.map(t => `<button class="${t === chartTopic ? 'active' : ''}" onclick="selectChart('${t}')">${esc(t)}</button>`).join('');
+  const readers = s.groups.filter(g => g.partitions.some(p => p.topic === chartTopic));
+  const series = [{ name: `produced to ${chartTopic}`, color: '#3987e5', points: s.produced_rate[chartTopic] || [] },
+    ...readers.map(g => ({ name: `committed by ${g.id}`, color: groupColor(g.id), points: s.consumed_rate[g.id] || [] }))];
+  lineChart($('#rateChart'), series, { unit: ' msg/s' });
+  $('#rateLegend').innerHTML = series.map(x => `<span style="--c:${x.color}">${esc(x.name)}</span>`).join('');
+
+  const lagSeries = s.groups.map(g => ({ name: g.id, color: groupColor(g.id), points: s.lag_history[g.id] || [] }));
+  lineChart($('#lagChart'), lagSeries, { unit: ' msgs' });
+  $('#lagLegend').innerHTML = lagSeries.map(x => `<span style="--c:${x.color}">${esc(x.name)}</span>`).join('') || '<span class="hint">no consumer groups yet</span>';
+}
+
+function renderGroups() {
+  $('#groups').innerHTML = snap.groups.map(g => `
+    <div class="group">
+      <div class="head"><span style="color:${groupColor(g.id)}">●</span><b>${esc(g.id)}</b>
+        <span class="state ${g.state}">${g.state}</span>
+        <span class="mono">lag ${g.lag}</span>
+        <span class="mono">${g.members.length} member${g.members.length === 1 ? '' : 's'}</span></div>
+      <div class="hint" style="margin:0 0 6px">assignor: ${esc(g.assignor || '–')} · coordinator broker ${g.coordinator ?? '–'}</div>
+      ${g.members.map(m => `<div class="member"><span>${esc(m.client_id)}</span> <span class="mono">${esc(m.host)}</span>
+        <span class="parts">${m.assigned.map(a => `<span class="${partClass(a.partition)}" title="${esc(a.topic)}">${a.partition}</span>`).join(' ') || '<span class="mono">nothing assigned</span>'}</span></div>`).join('')
+        || '<div class="hint" style="margin:0">no live members (offsets are kept, lag still counts)</div>'}
+      <div class="scroll" style="margin-top:8px"><table>
+        <thead><tr><th>Topic</th><th>Part</th><th>Committed</th><th>Log end</th><th>Lag</th><th>Owner</th></tr></thead>
+        <tbody>${g.partitions.map(p => `<tr><td class="mono">${esc(p.topic)}</td><td><span class="${partClass(p.partition)}">${p.partition}</span></td>
+          <td class="mono">${p.committed ?? '–'}</td><td class="mono">${p.high ?? '–'}</td><td class="mono">${p.lag ?? '–'}</td><td class="mono">${esc(p.owner || '–')}</td></tr>`).join('')}</tbody>
+      </table></div>
+    </div>`).join('') || '<div class="hint">No consumer groups. Start a worker in the shop app.</div>';
+}
+
+function renderEvents() {
+  $('#events').innerHTML = snap.events.map(e => `<div class="ev"><span class="mono">${fmtTime(e.at)}</span><span class="k ${e.kind}">${e.kind}</span><span><span class="mono">${esc(e.group || '')}</span> ${esc(e.text)}</span></div>`).join('')
+    || '<div class="hint">Nothing yet. Start, stop or kill workers and watch.</div>';
+}
+
+function renderInfra() {
+  $('#brokers').innerHTML = snap.brokers.map(b => `<tr><td>${b.id}</td><td class="mono">${esc(b.host)}:${b.port}</td><td>${b.controller ? 'controller + broker' : 'broker'}</td><td>${b.leader_of} partitions</td></tr>`).join('');
+  $('#topics').innerHTML = snap.topics.map(t => `<tr><td class="mono">${esc(t.name)}</td><td>${t.partitions.length}</td><td>${t.messages}</td>
+    <td class="mono">${t.partitions.map(p => `${p.replicas.length}/${p.isr.length}`).join(' ')}</td></tr>`).join('');
+}
+
+async function refreshTail() {
+  if (!selectedTopic) return;
+  const rows = await fetch(`/api/messages?topic=${encodeURIComponent(selectedTopic)}&limit=25`).then(r => r.json());
+  $('#tail').innerHTML = rows.map(m => `<tr><td class="mono">${fmtTime(m.timestamp)}</td><td><span class="${partClass(m.partition)}">${m.partition}</span></td>
+    <td class="mono">${m.offset}</td><td class="mono">${m.key == null ? '<i>null</i>' : esc(m.key.length > 14 ? m.key.slice(0, 10) + '…' : m.key)}</td>
+    <td class="mono msg-val" title="${esc(JSON.stringify(m.value))}">${esc(summarise(m.value))}</td></tr>`).join('')
+    || '<tr><td colspan="5" class="hint">nothing new since the inspector started</td></tr>';
+}
+
+function summarise(v) {
+  if (v && typeof v === 'object') {
+    if (v.status) return `${v.status} · ${v.customer} · by ${v.worker}${v.reason ? ' · ' + v.reason : ''}`;
+    if (v.item) return `${v.quantity} × ${v.item} · ${v.customer} · $${v.total}${v.dlq_reason ? ' · DLQ: ' + v.dlq_reason : ''}`;
+    return JSON.stringify(v);
+  }
+  return String(v);
+}
+
+async function refresh() {
+  try {
+    snap = await fetch('/api/snapshot').then(r => r.json());
+    $('#health').className = 'pill' + (snap.ok ? '' : ' bad');
+    $('#health').textContent = snap.ok ? `live · ${snap.collect_ms} ms` : 'stale';
+    $('#error').style.display = snap.ok ? 'none' : 'block';
+    $('#error').textContent = snap.error || '';
+    if (!snap.topics) return;
+    $('#clusterId').textContent = `${snap.bootstrap} · cluster ${snap.cluster_id}`;
+    renderTiles(); renderLanes(); renderCharts(); renderGroups(); renderEvents(); renderInfra();
+    refreshTail();
+  } catch (e) { console.error(e); }
+}
+window.selectTopic = (t) => { selectedTopic = t; renderLanes(); refreshTail(); };
+window.selectChart = (t) => { chartTopic = t; renderCharts(); };
+const simpleBox = $('#simple');
+try { simpleBox.checked = localStorage.getItem('inspector-simple') !== '0'; } catch (e) { simpleBox.checked = true; }
+const applySimple = () => { document.body.classList.toggle('simple', simpleBox.checked); try { localStorage.setItem('inspector-simple', simpleBox.checked ? '1' : '0'); } catch (e) {} };
+simpleBox.onchange = applySimple; applySimple();
+refresh();
+setInterval(refresh, 1000);
+fetch('http://localhost:8000/api/incidents/evidence', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ what: 'Inspector' }) }).catch(() => {});
+</script>
+</body>
+</html>

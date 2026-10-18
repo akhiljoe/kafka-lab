@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kafka Lab</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --surface-2: #222221; --border: rgba(255,255,255,.10);
+    --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781; --grid: #2c2c2a;
+    --blue: #3987e5; --orange: #d95926; --aqua: #199e70; --violet: #9085e9; --good: #0ca30c;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--page); color: var(--ink); font-size: 14px; line-height: 1.45; display: grid; grid-template-rows: auto 1fr; }
+  header { display: flex; align-items: center; gap: 16px; padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--surface); }
+  header h1 { font-size: 16px; margin: 0; font-weight: 700; }
+  .tabs { display: flex; gap: 4px; }
+  .tabs button { background: transparent; border: 1px solid transparent; color: var(--ink-2); padding: 7px 16px; border-radius: 10px; font: inherit; font-size: 14px; cursor: pointer; }
+  .tabs button.active { background: var(--surface-2); border-color: var(--border); color: var(--ink); font-weight: 600; }
+  .tabs button small { display: block; font-size: 11px; color: var(--muted); font-weight: 400; }
+  header .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  header a, header .right button { color: var(--ink-2); text-decoration: none; border: 1px solid var(--border); background: transparent; padding: 6px 12px; border-radius: 8px; font: inherit; font-size: 13px; cursor: pointer; }
+  header .right button.danger { color: #ffb3b3; }
+  .body { display: grid; grid-template-columns: 300px 1fr; min-height: 0; }
+  .body.hide { grid-template-columns: 44px 1fr; }
+  aside { border-right: 1px solid var(--border); background: var(--surface); overflow: auto; padding: 14px; }
+  .body.hide aside > *:not(.toggle) { display: none; }
+  .toggle { background: transparent; border: 1px solid var(--border); color: var(--ink-2); border-radius: 8px; padding: 4px 8px; font: inherit; font-size: 12px; cursor: pointer; margin-bottom: 10px; }
+  aside h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  .who { border-left: 3px solid var(--c, var(--grid)); padding: 6px 0 6px 10px; margin-bottom: 10px; }
+  .who b { display: block; font-size: 13px; }
+  .who b span { color: var(--muted); font-weight: 400; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; margin-right: 6px; }
+  .who p { margin: 2px 0 0; color: var(--ink-2); font-size: 12.5px; }
+  .who p i { color: var(--ink); font-style: normal; font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; }
+  .who .live { margin-top: 3px; font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; color: var(--muted); }
+  .numbers { margin-top: 16px; border-top: 1px solid var(--grid); padding-top: 12px; }
+  .num { display: grid; grid-template-columns: 92px 1fr; gap: 8px; font-size: 12.5px; padding: 4px 0; }
+  .num b { color: var(--ink); font-weight: 600; }
+  .num span { color: var(--ink-2); }
+  .tip { margin-top: 14px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--grid); padding-top: 10px; }
+  .tip a { color: var(--blue); }
+  iframe { width: 100%; height: 100%; border: 0; background: var(--page); display: none; }
+  iframe.active { display: block; }
+  .frames { min-height: 0; }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--surface-2); border: 1px solid var(--border); color: var(--ink); padding: 10px 16px; border-radius: 12px; font-size: 14px; display: none; z-index: 9; }
+  @media (max-width: 900px) { .body { grid-template-columns: 1fr; } aside { display: none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Kafka Lab</h1>
+  <nav class="tabs">
+    <button data-tab="watch">Watch<small>see the event travel</small></button>
+    <button data-tab="experiment">On call<small>debug incidents</small></button>
+  </nav>
+  <div class="right">
+    <button class="danger" id="fresh" title="Delete and recreate the topics. Offsets start at 0 again.">Start fresh</button>
+    <a href="http://localhost:8080" target="_blank">Inspector ↗</a>
+  </div>
+</header>
+
+<div class="body" id="body">
+  <aside>
+    <button class="toggle" id="toggle">◀ hide</button>
+    <h2>What you are looking at</h2>
+    <div id="cast"></div>
+    <div class="numbers">
+      <h2>The three numbers</h2>
+      <div class="num"><b>offset</b><span>position of one event inside one partition. Starts at 0, counts up, never reused.</span></div>
+      <div class="num"><b>committed</b><span>the position a consumer group has confirmed as done.</span></div>
+      <div class="num"><b>lag</b><span>log end minus committed. Events waiting to be processed.</span></div>
+    </div>
+    <div class="tip">Lessons in <code>docs/LEARN.md</code>. The <a href="http://localhost:8080" target="_blank">Inspector</a> shows the same numbers straight from the broker.</div>
+  </aside>
+  <div class="frames">
+    <iframe id="f-watch" data-src="/graph?embed=1"></iframe>
+    <iframe id="f-experiment" data-src="/ops?embed=1"></iframe>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// Polling pages redraw often. Skip a redraw when the HTML is unchanged, so text
+// selection and open <details> survive, and the browser does less work.
+(() => { const d = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
+  Object.defineProperty(Element.prototype, 'innerHTML', { get: d.get, set(v) { if (this.__lastHTML !== undefined && this.__lastHTML === v) return; this.__lastHTML = v; d.set.call(this, v); } }); })();
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+let tab = 'watch';
+try { tab = localStorage.getItem('lab-tab') || 'watch'; } catch (e) {}
+if (!document.getElementById('f-' + tab)) tab = 'watch';
+try { const q = new URLSearchParams(location.search).get('tab'); if (q && document.getElementById('f-' + q)) tab = q; } catch (e) {}
+function show(t) {
+  tab = t;
+  try { localStorage.setItem('lab-tab', t); } catch (e) {}
+  document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
+  document.querySelectorAll('iframe').forEach(f => {
+    const on = f.id === 'f-' + t;
+    if (on && !f.src) f.src = f.dataset.src + '&v=' + Date.now();   // cache-bust the embedded page
+    f.classList.toggle('active', on);
+    if (f.src) try { f.contentWindow.postMessage({ type: 'lab-visible', visible: on }, '*'); } catch (e) {}
+  });
+}
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => show(b.dataset.tab));
+show(tab);
+
+$('#toggle').onclick = () => { const h = $('#body').classList.toggle('hide'); $('#toggle').textContent = h ? '▶' : '◀ hide'; try { localStorage.setItem('lab-aside', h ? '0' : '1'); } catch (e) {} };
+try { if (localStorage.getItem('lab-aside') === '0') $('#toggle').click(); } catch (e) {}
+
+$('#fresh').onclick = async () => {
+  if (!confirm('Start fresh? This stops all workers and recreates the topics. Every offset goes back to 0.')) return;
+  const t = $('#toast'); t.textContent = 'Recreating topics…'; t.style.display = 'block';
+  await fetch('/api/wipe', { method: 'POST' });
+  t.textContent = 'Done. Topics are empty, offsets start at 0.';
+  setTimeout(() => { t.style.display = 'none'; }, 4000);
+  document.querySelectorAll('iframe').forEach(f => { if (f.src) f.contentWindow.location.reload(); });
+};
+
+function who(color, kind, name, what, live) {
+  return `<div class="who" style="--c:${color}"><b><span>${kind}</span>${esc(name)}</b><p>${what}</p>${live ? `<div class="live">${live}</div>` : ''}</div>`;
+}
+async function cast() {
+  try {
+    const s = await fetch('/api/flow?limit=1').then(r => r.json());
+    const k = s.kafka, brokers = k.brokers || [], op = (k.groups || []).find(g => g.id === 'order-processor'), ui = (k.groups || []).find(g => g.id === 'shop-ui');
+    const ordersP = (k.topics && k.topics['orders']) || [], statusP = (k.topics && k.topics['order-status']) || [];
+    const members = op ? op.members.map(m => m.client_id) : [];
+    const readerGroups = (k.groups || []).filter(g => g.members.length && !['order-processor', 'shop-ui'].includes(g.id) && !g.id.startsWith('inspector') && !g.id.startsWith('shop-'));
+    const producers = Object.entries(s.producers || {});
+    $('#cast').innerHTML = [
+      who('#3987e5', 'producers', producers.map(([n]) => n).join(', '), `Applications that create events. ${producers.map(([n, d]) => `<i>${esc(n)}</i>: ${esc(d)}`).join('. ')}. A producer only sends; it never knows who reads.`, `${s.stats.placed} orders sent since start`),
+      who('#898781', 'brokers', brokers.map(b => 'broker ' + b.id).join(', ') || 'none reachable', `The Kafka servers (${brokers.map(b => b.host + ':' + b.port).join(', ') || 'localhost:9092'}). Each partition lives on all ${brokers.length || 3}: one broker is its leader, the others keep copies. Kill one and a copy takes over.`, `${ordersP.filter(p => p.isr && p.isr.length === p.replicas.length).length}/${ordersP.length} orders partitions fully in sync`),
+      who('#d95926', 'topic', 'orders', 'A named feed of events, like a table name. Split into 3 partitions, each an ordered log. The customer name is the message key: same customer, same partition, so one customer\'s orders stay in order.', ordersP.map(p => `p${p.id}: ${p.high} on B${p.leader}`).join(' · ') || 'not created yet'),
+      who('#c98500', 'consumer group', 'order-processor', 'The workers that do the real work for an order. Kafka splits the 3 partitions among the members of the group. Each partition has exactly one owner at a time.', members.length ? `members: ${members.join(', ')}` : 'no members yet. Watch tab → press + on order-processor.'),
+      ...readerGroups.map(g => who('#9085e9', 'consumer group', g.id, 'Another team reading the same orders for its own purpose. Its own committed offsets, its own lag. Reading never removes an event.', g.members.length ? `members: ${g.members.map(m => m.client_id).join(', ')}` : 'no members')),
+      who('#199e70', 'topic', 'order-status', 'A second feed. Workers write what happened to each order here: consumed, ready, rejected.', statusP.map(p => `p${p.id}: ${p.high}`).join(' · ')),
+      who('#199e70', 'consumer group', 'shop-ui', 'Your application again, now as a reader. It follows order-status so the Watch tab can show consumed, processed and dead-lettered.', ui && ui.members.length ? `member: ${ui.members[0].client_id}` : 'not connected'),
+    ].join('');
+  } catch (e) { console.error(e); }
+}
+cast();
+setInterval(cast, 2000);
+</script>
+</body>
+</html>
